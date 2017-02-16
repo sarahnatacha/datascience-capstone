@@ -3,9 +3,9 @@ The goal of this project is to display that we have gotten used to working with 
 
 # Repository content 
 This repository contains:
-README.md 
-Milestone.Rmd: The report can be found on R Pubs (http://rpubs.com/). It explains the exploratory analysis and the goals for the eventual app and algorithm.  
-Final Project directory: Data Product with a Shiny App and a presentation 
+* README.md 
+* Milestone.Rmd: The report can be found on R Pubs (http://rpubs.com/). It explains the exploratory analysis and the goals for the eventual app and algorithm.  
+* Final Project directory: Data Product with a Shiny App and a presentation 
 Data directory
 
 # Tasks
@@ -39,4 +39,4 @@ Evaluate the new predictions on both accuracy and efficiency.
 Create a data product to show off the prediction algorithm via a Shiny app that accepts an n-gram and predicts the next word.
 
 ## Task 7
-A 5 slided deck promoting the product using RStudio Presenter
+Write 5 slides using RStudio Presenter explaining and promoting the product  

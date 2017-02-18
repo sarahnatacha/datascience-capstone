@@ -1,0 +1,286 @@
+---
+title: "Milestone Report Capstone Project"
+author: "Sarah Natacha"
+date: "February 16 2017"
+output: 
+  html_document:
+    toc: true
+    theme: united
+---
+
+## Introduction 
+
+This is the milestone report for the Data Science Specialization Capstone Project on Coursera. It describes the exploratory data analysis and modeling of 3 text files containing text from three different sources (blogs, news & twitter). The code can be accessed by looking in my [GitHub repository](https://github.com/sarahnatacha/datascience-capstone).
+This report also explains how the prediction algorithm and shiny app are planned to be created.
+
+
+## Executive Summary
+
+The objective of the Project is to produce a prediction  algorithm in R that will suggest the next word to a user based on the text input. As the user types, the algorithm will compare the text to a list of words. The word that will be suggested will be the one with the highest probability to be combined with the rest of the sentence.
+First we need to clean the data and remove the bad words. Also, in order to train the prediction algorithm we need to analyze the data and find the optimal sample size from the dataset required to build a corpus that will have a good performance using a minimum amount of memory for a mobile device. 
+
+## Assumptions and requirements
+We assume that the packages were installed. RWeka requires Java 1.7 or higher. If getting an error during the installation, open a terminal and type sudo R CMD javareconf and sudo ln -f -s $(/usr/libexec/java_home)/jre/lib/server/libjvm.dylib /usr/local/lib. Then in rStudio,  install.packages('rJava', type='source').
+It is also assumed that the data was downloaded (see [links]), unzipped and available in the data subdirectory of the current R directory.
+
+
+## Loading the data
+We load the libraries and read the files
+
+```{r Libraries & functions,echo=TRUE,warning=FALSE,message=FALSE}
+
+library("tm") # for text mining and corpus
+library("data.table")
+library("RCurl")
+library("SnowballC")
+library("stringi")
+library("wordcloud")
+library("ggplot2") # for plotting
+library("RWeka") #for tokenization
+library("RColorBrewer")
+library("Matrix")
+
+setwd(".") #set the directory to the current one
+
+#get the data
+#open connections to the files in order to read them completely if one of the objects does not exist yet
+if (!exists("twitter")) {
+  con_twitter <- file("./data/en_US.twitter.txt", open = "rb")
+  con_news <- file("./data/en_US.news.txt", open = "rb")
+  con_blogs <- file("./data/en_US.blogs.txt", open = "rb")
+  
+  twitter <- readLines(con_twitter, warn = F)
+  news <- readLines(con_news,encoding= "UTF-8", warn = F)
+  blogs <- readLines(con_blogs,encoding= "UTF-8", warn = F)
+  badwords <- readLines("./data/Terms-to-Block.txt",encoding= "UTF-8", warn = F)
+  
+  # close the connection to free the memory
+  close(con_twitter)
+  close(con_news)
+  close(con_blogs)
+  rm (con_twitter,con_news,con_blogs) #delete the connection objects
+}
+
+```
+## Summary of Data
+We can see a summary of the 3 files below
+
+```{r summary,echo=TRUE,warning=FALSE,message=FALSE}
+  summary.table <- data.frame(
+  "Source"=c("Blogs","News","Twitter"),
+  "Number of lines"=c(length(blogs),length(news),length(twitter)),
+  "Average length"=c(mean(nchar(blogs)),mean(nchar(news)),mean(nchar(twitter))),
+  "Min length"=c(min(nchar(blogs)),min(nchar(news)),min(nchar(twitter))),
+  "Max length"=c(max(nchar(blogs)),max(nchar(news)),max(nchar(twitter))),
+  "Variance" = c(var(nchar(blogs)),var(nchar(news)),var(nchar(twitter))),
+  "Std. Dev." = c(sd(nchar(blogs)),sd(nchar(news)),sd(nchar(twitter)))
+  )
+
+knitr::kable(summary.table) # displays the information for each file in a table
+
+
+```
+
+## Sampling
+Now that we have loaded the raw data, we have to take a sample of each file because the files are really big and the manipulation of the files will be slow. We are going to take only 1% of each text file and create a corpus, which will consist of the three sample text files.
+
+```{r sampling,echo=TRUE,warning=FALSE,message=FALSE}
+set.seed(5262)
+
+subset.pct = 0.01
+s.blogs <- blogs[sample(length(blogs),subset.pct*length(blogs))]
+s.news <- news[sample(length(news),subset.pct*length(news))]
+s.twitter <- twitter[sample(length(twitter),subset.pct*length(twitter))]
+
+s.all<- c(s.blogs,s.news,s.twitter)
+
+s.summary.table <- data.frame(
+  "Source"=c("Blogs","News","Twitter"),
+  "Number of lines"=c(length(s.blogs),length(s.news),length(s.twitter)),
+  "Average length"=c(mean(nchar(s.blogs)),mean(nchar(s.news)),mean(nchar(s.twitter))),
+  "Min length"=c(min(nchar(s.blogs)),min(nchar(s.news)),min(nchar(s.twitter))),
+  "Max length"=c(max(nchar(s.blogs)),max(nchar(s.news)),max(nchar(s.twitter))),
+  "Variance" = c(var(nchar(s.blogs)),var(nchar(s.news)),var(nchar(s.twitter))),
+  "Std. Dev." = c(sd(nchar(s.blogs)),sd(nchar(s.news)),sd(nchar(s.twitter)))
+)
+
+knitr::kable(s.summary.table) # displays the information for each sample in a table
+```
+
+## Cleaning the corpus
+Now that we have our corpus , we need to clean it. We will transform all characters to lowercase, remove the punctuation, remove the numbers and the common english stopwords (and, the, or etc..), the profanity and the excess of space.
+
+```{r }
+
+CleanCorpus <- function(chrVector) {
+  corpus<- Corpus(VectorSource(list(chrVector))) # create corpus from all the files
+  corpus <- tm_map(corpus, content_transformer(tolower)) # Convert to lowercase
+  # remove emails
+  RemoveEmails <- function(x) {gsub("\\S+@\\S+", "", x)} 
+  corpus <- tm_map(corpus,RemoveEmails)
+  # remove URLS
+  RemoveUrls <- function(x) {gsub("http[[:alnum:]]*","",x)}
+  corpus <- tm_map(corpus,RemoveUrls)
+  # Remove Twitter hashtags
+  RemoveHashtags <- function(x) {gsub("#[[:alnum:]]*","",x)}
+  corpus <- tm_map(corpus,RemoveHashtags)
+  # remove Twitter handles (e.g. @username)
+  RemoveHandles <- function(x) {gsub("@[[:alnum:]]*","",x)}
+  corpus <- tm_map(corpus,RemoveHandles)
+  
+  corpus <- tm_map(corpus, removeWords, c("rt","pm","p m")) # remove twitter  terms like RT (retweet) and PM (private message)
+  
+  # remove punctuation, numbers, whitespace, numbers  and stop words
+  corpus <- tm_map(corpus, removePunctuation)
+  corpus <- tm_map(corpus, stripWhitespace)
+  corpus<- tm_map(corpus,removeNumbers)
+  corpus <- tm_map(corpus, removeWords, stopwords("en"))
+  #remove bad words 
+  corpus <- tm_map(corpus, removeWords, badwords)
+  corpus<- tm_map(corpus, PlainTextDocument)
+  corpus
+}
+
+## create a clean corpus
+my.cleancorpus<- CleanCorpus(s.all)
+
+#remove the objects that we will not be of use anymore
+rm(badwords)
+rm(blogs,twitter,news)
+rm(s.all,s.blogs,s.twitter,s.news)
+
+```
+
+
+## Exploratory Data Analysis
+We are going to tokenize the corpus and perform ngrams analysis. It will show which words are the most frequently used and what their frequency is. 
+
+We use a document term matrix to create a cloud image in order to get an idea of the most frequent words.
+```{r }
+dtm.cleancorpus <- DocumentTermMatrix(my.cleancorpus)
+frequency.words <- sort(colSums(as.matrix(dtm.cleancorpus)), decreasing=TRUE) 
+set.seed(100)   
+wordcloud(names(frequency.words), frequency.words, max.words=50, rot.per=0.2, colors=brewer.pal(8, "Dark2")) 
+rm(dtm.cleancorpus) # remove the objects that will not be used anymore
+```
+
+We create the n-grams and we look at the distribution of word frequencies for the tokens 1-gram, 2-gram and 3-gram.
+
+```{r Tokenizing functions, echo=TRUE}
+
+CreateNgram <- function(minmaxgram,delimiterin=NULL) {
+  if (!is.null(delimiterin)){
+    ngram <- NGramTokenizer(corpus.df, Weka_control(min = minmaxgram, max = minmaxgram,delimiters =delimiterin))
+  }else{
+    ngram <- NGramTokenizer(corpus.df, Weka_control(min = minmaxgram, max = minmaxgram))
+  }
+  
+  gram.df <- data.frame(V1 = as.vector(names(table(unlist(ngram)))), V2 = as.numeric(table(unlist(ngram))))
+  rm(ngram) # remove the ngram that will not be used anymore
+  names(gram.df) <- c("word","freq")
+  gram.df <- gram.df[with(gram.df, order(-gram.df$freq)),]
+  row.names(gram.df) <- NULL
+  gram.df$cumsum <- cumsum(gram.df$freq)
+  gram.df$pct <- (gram.df$freq/sum(gram.df$freq))*100
+  gram.df$cumpct <- cumsum(gram.df$pct)
+  gram.df
+}
+
+
+CreatePlotNgram <- function(gram.dataframe,title) {
+  ggplot(head(gram.dataframe,15), aes(x=reorder(word,-freq), y=freq, fill=freq)) +
+    geom_bar(stat="Identity") +
+    geom_text(aes(label=freq), vjust = -0.5) +
+    ggtitle(title) +
+    ylab("Frequency") +
+    xlab("Term")  + theme(axis.text.x=element_text(angle=45, hjust=1))
+}
+
+
+if (!exists("corpus.df")){corpus.df <-data.frame(text=unlist(sapply(my.cleancorpus, `[`, "content")), stringsAsFactors=F)}
+rm(my.cleancorpus) 
+```
+
+```{r create unigram, echo=TRUE}
+#create unigram
+if (!exists("unigram.df")){
+  unigram.df <- CreateNgram(1)
+}
+```
+
+```{r create bigram, echo=TRUE}
+#create bigram
+if (!exists("bigram.df")){
+  bigram.df <- CreateNgram(2, " \\r\\n\\t.,;:\"()?!")
+}
+```
+
+```{r create trigram, echo=TRUE}
+#create trigram
+if (!exists("trigram.df")){
+  trigram.df <- CreateNgram(3," \\r\\n\\t.,;:\"()?!")
+}
+```
+
+```{r SummaryTable, echo=TRUE}
+rm(corpus.df) # remove the objects that will not be used anymore
+
+summarytable.grams <- data.frame(
+  "Grams"=c("unigram","Bigram","Trigram"),
+  "Example"=c(paste(unigram.df $word[2]),paste(bigram.df$word[2]),paste(trigram.df$word[2])),
+  "Count"=c(length(unigram.df $word),length(bigram.df$word),length(trigram.df$word))
+)
+summarytable.grams
+```
+
+We analyze the coverage of words. the The n-grams are sorted by frequency of appearance in the text.
+
+### Unigram coverage
+Frequency of words for a one-word combination
+```{r unigram plot, echo=TRUE}
+#display graph for unigram word frequency  
+CreatePlotNgram(unigram.df,"Unigram")  
+
+
+```
+
+### Bigram coverage
+Frequency of words for a two-word combination
+```{r Bigram plot, echo=TRUE}
+#display graph for bigram word frequency  
+CreatePlotNgram(bigram.df,"Bigram")   
+
+
+```
+
+### Trigram coverage
+Frequency of words for a three-word combination
+
+```{r Trigram plot , echo=TRUE}
+#display graph for trigram word frequency  
+CreatePlotNgram(trigram.df,"Trigram")  
+
+
+```
+
+We can take a look at how many unique words we need in a frequency sorted dictionary to cover of all word instances in the language.
+
+```{r Coverage plots - Unigram, echo=FALSE} 
+plot(unigram.df$cumpct,xlab="Number of words",ylab="Coverage (%)",main="Number of unique words to cover all word instances in the language")
+abline(h=50)
+abline(h=80)
+abline(h=90)
+
+```
+
+50% coverage is ```r length(unigram.df[which(unigram.df$cumpct<=50),c("word")])  ``` 
+80%: ```r length(unigram.df[which(unigram.df$cumpct<=80),c("word")])   ```  
+90%: ```r length(unigram.df[which(unigram.df$cumpct<=90),c("word")])   ```
+
+## Conclusion and next steps
+We will use this analysis and ngrams with the objective to calculate the probability of the next word occuring. The input text will be tokenized and compared to the ngrams to get the highest probablity for the next word. This analysis showed that removing the low frequency words will reduce the size of the dataset and increase the performance of the app. Reducing the amount of rows in the ngrams and removing the objects that are no longer used with rm(x),  rm(list=ls())  or gc()  will also help solving any potential memory issues.
+
+## Links
+1. The data is from a corpus called HC Corpora (www.corpora.heliohost.org). See the readme file at http://www.corpora.heliohost.org/aboutcorpus.html for details on the corpora available. It can be downloaded at https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip
+2. The source code for this report can be found here: https://github.com/sarahnatacha/datascience-capstone
+3. The list of bad words was obtained from: https://www.frontgatemedia.com/a-list-of-723-bad-words-to-blacklist-and-how-to-use-facebooks-moderation-tool/

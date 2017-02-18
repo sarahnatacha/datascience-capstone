@@ -4,9 +4,12 @@ The goal of this project is to display that we have gotten used to working with 
 # Repository content 
 This repository contains:
 * README.md 
-* Milestone.Rmd: The report can be found on R Pubs (http://rpubs.com/). It explains the exploratory analysis and the goals for the eventual app and algorithm.  
+* Data directory
+* R code files used to complete the tasks and test the code
+* CapstoneProjectTasks.Rmd describes the tasks to accomplish and questions to consider when working on the project
+* Milestone.Rmd: The report can be found on R Pubs (http://rpubs.com/sarahnatacha/capstonereport). It explains the exploratory analysis and the goals for the eventual app and algorithm.  
 * Final Project directory: Data Product with a Shiny App and a presentation 
-Data directory
+
 
 # Tasks
 
